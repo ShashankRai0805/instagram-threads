@@ -1,6 +1,8 @@
 const User = require("../models/user-model");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken")
+const formidable = require("formidable");
+const cloudinary = require("../config/cloudinary")
 
 exports.signin = async (req, res) =>{
     try{
@@ -128,5 +130,138 @@ exports.userDetails = async (req, res) => {
         res.status(400).json({
             msg: "Error in user details!!", err: err.message
         });
+    }
+}
+
+exports.followUser = async (req, res) => {
+    try{
+        const { id } = req.params;
+        if(!id){
+            return res.status(400).json({
+                msg: "Id is required."
+            })
+        }
+        const userExists = await User.findById(id)
+        if(!userExists){
+            return res.status(400).json({
+                msg: "User does not exists!!"
+            });
+        }
+        if(userExists.followers.includes(req.user._id)){
+            await User.findByIdAndUpdate(userExists._id, {
+                $pull: {followers:req.user._id},
+            }, {new: true})
+            return res.status(201).json({
+                msg: `Unfollowed ${userExists.usernName}`
+            });
+        }
+        await User.findByIdAndUpdate(userExists._id, {
+                $push: {followers:req.user._id},
+            }, 
+            {new: true}
+        )
+            return res.status(201).json({
+                msg: `Following ${userExists.username}`
+            });
+    } catch(err){
+        res.status(400).json({
+            msg: "Error in follow user !!", err: err.message
+        });
+    }
+}
+
+exports.updateProfile = async (req, res) => {
+    
+    try {
+        const userExist = await User.findById(req.user._id);
+        if(!userExist){
+            return res.status(400).json({
+                msg: "User does not exists!!"
+            })
+        }
+        const form = formidable({});
+        form.parse(req, async (err, fields, files) => {
+            if(err){
+                return res.status(400).json({
+                    msg: "Error in parsing form data",
+                    err: err.message
+                })
+            }
+            if(fields.text){
+                await User.findByIdAndUpdate(req.user._id, {bio: fields.text}, {new: true})
+            }
+            if(files.media){
+                if(userExist.public_id){
+                    await cloudinary.uploader.destroy(userExist.public_id, 
+                        (err, result)=>{
+                            console.log(error, result);
+                        }
+                    );
+                }
+                const uploadedImage = await cloudinary.uploader.upload(files.media.filepath, 
+                    {folder: 'INSTAGRAM-THREADS/Profiles'}
+                );
+                if(!uploadedImage){
+                    return res.status(400).json({
+                        msg: "Error in uploading image"
+                    })
+                }
+                await User.findByIdAndUpdate(req.user._id, 
+                    {
+                        profilePic: uploadedImage.secure_url,
+                        public_id: uploadedImage.public_id
+                    }, 
+                    {new: true})
+            }
+            res.status(201).json({
+            msg: "Profile updated successfully!!"
+        })
+        })
+        
+    } catch (error) {
+        res.status(400).json({
+            msg: "Error in updating profile",
+            err: error.message
+        })
+    }
+}
+
+exports.searchUser = async (req, res)=>{
+    try {
+        const {query} = req.params;
+        const users = await User.find({
+            $or: [
+                {username: {$regex: query, $options: 'i'}},
+                {email: {$regex: query, $options: 'i'}}
+            ]
+        });
+        res.status(200).json({
+            msg: "Searched !",
+            users
+        }, );
+    } catch (error) {
+        res.status(400).json({
+            msg: "Error in searching user",
+            err: error.message
+        })
+    }
+}
+
+exports.logout = async (req, res)=>{
+    try {
+        res.cookie('token', '', {
+            maxAge: Date.now(),
+            httpOnly: true,
+            sameSite: "none",
+            secure: true
+        })
+        res.status(400).json({
+            msg: "User logged out successfully!!"
+        })
+    } catch (error) {
+        res.status(400).json({
+            msg: "Error in logout",
+            err: error.message
+        })
     }
 }
