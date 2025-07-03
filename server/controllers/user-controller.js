@@ -265,3 +265,15 @@ exports.logout = async (req, res)=>{
         })
     }
 }
+
+exports.myInfo = async (req, res) => {
+    try {
+        res.status(200).json({
+            msg: req.user
+        })
+    } catch (error) {
+        res.status(400).json({
+            msg: "Error in myInfo"
+        })
+    }
+}
